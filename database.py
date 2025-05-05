@@ -204,6 +204,7 @@ def get_cves_by_cpe(
         logger.error(f"Failed to fetch CVEs for {cpe_name}: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
 
+
 @app.get("/cve_from_db")
 def get_cves_from_db(
     cve_id: str = Query(..., alias="cveId", description="CVE ID, e.g. CVE-2019-1010218")
@@ -211,9 +212,7 @@ def get_cves_from_db(
     try:
         conn = get_db_conn()
         cur = conn.cursor()
-        cur.execute(
-            "SELECT * FROM cve_lookup WHERE cve_id = %s;", (cve_id,)
-        )
+        cur.execute("SELECT * FROM cve_lookup WHERE cve_id = %s;", (cve_id,))
         rows = cur.fetchall()
         cur.close()
         conn.close()
