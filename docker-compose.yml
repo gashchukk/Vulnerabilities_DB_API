@@ -1,0 +1,10 @@
+version: "3.9"
+
+services:
+  cve-api:
+    build:
+      context: .
+    ports:
+      - "8000:8000"
+    container_name: cve-fastapi
+    restart: unless-stopped
