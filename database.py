@@ -18,8 +18,10 @@ DB_CONFIG = {
     "dbname": os.getenv("POSTGRES_DB", "cve_db"),
 }
 
+
 def get_db_conn():
     return psycopg2.connect(**DB_CONFIG)
+
 
 def init_cve_table():
     sql = """
@@ -32,9 +34,13 @@ def init_cve_table():
       raw_response  JSONB       NOT NULL
     );
     """
-    conn = get_db_conn(); cur = conn.cursor()
-    cur.execute(sql); conn.commit()
-    cur.close(); conn.close()
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute(sql)
+    conn.commit()
+    cur.close()
+    conn.close()
+
 
 @app.on_event("startup")
 def on_startup():
@@ -42,25 +48,33 @@ def on_startup():
 
 
 NVD_API_BASE = "https://services.nvd.nist.gov/rest/json/cves/2.0"
-NVD_API_KEY  = os.getenv("NVD_API_KEY", "YOUR_API_KEY")
-PAGE_SIZE    = 2000
+NVD_API_KEY = os.getenv("NVD_API_KEY", "YOUR_API_KEY")
+PAGE_SIZE = 2000
+
 
 def store_page(payload):
     """Insert one page of results as a JSONB blob."""
     conn = get_db_conn()
-    cur  = conn.cursor()
+    cur = conn.cursor()
     cur.execute(
         """
         INSERT INTO cve_lookup (cve_id, cpe_name, fetched_at, description, metrics, raw_response)
         VALUES (%s, %s, %s, %s, %s, %s)
         """,
-        (payload['cve_id'], payload['cpe_name'], payload['fetched_at'],
-        payload['description'], Json(payload['metrics']), Json(payload['raw_response']))
+        (
+            payload["cve_id"],
+            payload["cpe_name"],
+            payload["fetched_at"],
+            payload["description"],
+            Json(payload["metrics"]),
+            Json(payload["raw_response"]),
+        ),
     )
 
     conn.commit()
     cur.close()
     conn.close()
+
 
 def fetch_all_chunks():
     """Fetch all CVEs in pages of PAGE_SIZE and store each page."""
@@ -68,30 +82,26 @@ def fetch_all_chunks():
     total = None
 
     while True:
-        params = {
-            "startIndex": start,
-            "resultsPerPage": PAGE_SIZE
-        }
-        headers = {
-            "accept":      "application/json",
-            "apiKey":      NVD_API_KEY
-        }
+        params = {"startIndex": start, "resultsPerPage": PAGE_SIZE}
+        headers = {"accept": "application/json", "apiKey": NVD_API_KEY}
 
         logger.info(f"Fetching CVEs {start}–{start+PAGE_SIZE}…")
         resp = requests.get(NVD_API_BASE, params=params, headers=headers)
         resp.raise_for_status()
         data = resp.json()
-    
+
         if total is None:
             total = data.get("totalResults", 0)
             print("Total CVEs: ", total)
             logger.info(f"Total CVEs to fetch: {total}")
 
-        fetched_at = data['timestamp']
+        fetched_at = data["timestamp"]
         for item in data["vulnerabilities"]:
             c = item["cve"]
             cve_id = c["id"]
-            desc = next((d["value"] for d in c["descriptions"] if d["lang"] == "en"), None)
+            desc = next(
+                (d["value"] for d in c["descriptions"] if d["lang"] == "en"), None
+            )
             metics = c["metrics"]
 
             cpe = None
@@ -104,20 +114,23 @@ def fetch_all_chunks():
                 if cpe:
                     break
             print("Storing: ", cve_id)
-            store_page({
-                "cve_id": cve_id,
-                "cpe_name": cpe,
-                "fetched_at": fetched_at,
-                "description": desc,
-                "metrics": metics,
-                "raw_response": json.dumps(item)
-            })
+            store_page(
+                {
+                    "cve_id": cve_id,
+                    "cpe_name": cpe,
+                    "fetched_at": fetched_at,
+                    "description": desc,
+                    "metrics": metics,
+                    "raw_response": json.dumps(item),
+                }
+            )
 
         logger.info(f"Stored chunk starting at {start}")
 
         start += PAGE_SIZE
         if start >= total:
             break
+
 
 @app.post("/fetch_all")
 def fetch_all(background_tasks: BackgroundTasks):
@@ -128,35 +141,40 @@ def fetch_all(background_tasks: BackgroundTasks):
     background_tasks.add_task(fetch_all_chunks)
     return {"status": "started", "page_size": PAGE_SIZE}
 
+
 @app.get("/status")
 def status():
-    conn = get_db_conn(); cur = conn.cursor()
+    conn = get_db_conn()
+    cur = conn.cursor()
     cur.execute("SELECT COUNT(*) FROM cve_lookup;")
     count = cur.fetchone()[0]
-    cur.close(); conn.close()
+    cur.close()
+    conn.close()
     return {"pages_stored": count}
+
 
 @app.get("/cve_by_id")
 def get_cves_by_cpe(
-    cpe_name: str = Query(..., alias="cveId", description="CPE 2.3 URI, e.g. CVE-2019-1010218")
+    cpe_name: str = Query(
+        ..., alias="cveId", description="CPE 2.3 URI, e.g. CVE-2019-1010218"
+    )
 ):
     try:
         params = {"cveId": cpe_name}
-        headers = {
-            "accept": "application/json",
-            "apiKey": NVD_API_KEY
-        }
+        headers = {"accept": "application/json", "apiKey": NVD_API_KEY}
 
         resp = requests.get(NVD_API_BASE, params=params, headers=headers)
         resp.raise_for_status()
 
         data = resp.json()
         rows = []
-        fetched_at = data['timestamp']
+        fetched_at = data["timestamp"]
         for item in data["vulnerabilities"]:
             c = item["cve"]
             cve_id = c["id"]
-            desc = next((d["value"] for d in c["descriptions"] if d["lang"] == "en"), None)
+            desc = next(
+                (d["value"] for d in c["descriptions"] if d["lang"] == "en"), None
+            )
             metics = c["metrics"]
 
             cpe = None
@@ -169,14 +187,16 @@ def get_cves_by_cpe(
                 if cpe:
                     break
 
-            rows.append({
-                "cve_id": cve_id,
-                "cpe_name": cpe,
-                "fetched_at": fetched_at,
-                "description": desc,
-                "metrics": metics,
-                "raw_response": json.dumps(item)
-            })
+            rows.append(
+                {
+                    "cve_id": cve_id,
+                    "cpe_name": cpe,
+                    "fetched_at": fetched_at,
+                    "description": desc,
+                    "metrics": metics,
+                    "raw_response": json.dumps(item),
+                }
+            )
 
         return rows
 
