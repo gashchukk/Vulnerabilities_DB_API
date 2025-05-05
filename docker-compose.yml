@@ -1,10 +1,42 @@
-version: "3.9"
+version: "2.4"
 
 services:
+  postgres:
+    image: postgres:15
+    container_name: cve_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: test123
+      POSTGRES_DB: cve_db
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cve_net
+
   cve-api:
-    build:
-      context: .
+    build: .
+    container_name: cve_fastapi
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "8000:8000"
-    container_name: cve-fastapi
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: test123
+      POSTGRES_DB: cve_db
+      NVD_API_KEY: 6e7353ad-70d5-4d73-9ff3-75c589934481
+    networks:
+      - cve_net
     restart: unless-stopped
+
+networks:
+  cve_net:
+    driver: bridge
