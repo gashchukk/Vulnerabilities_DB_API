@@ -203,3 +203,36 @@ def get_cves_by_cpe(
     except requests.RequestException as e:
         logger.error(f"Failed to fetch CVEs for {cpe_name}: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.get("/cve_from_db")
+def get_cves_from_db(
+    cve_id: str = Query(..., alias="cveId", description="CVE ID, e.g. CVE-2019-1010218")
+):
+    try:
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM cve_lookup WHERE cve_id = %s;", (cve_id,)
+        )
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        if not rows:
+            return JSONResponse(status_code=404, content={"error": "CVE not found"})
+
+        return [
+            {
+                "cve_id": row[0],
+                "cpe_name": row[1],
+                "fetched_at": row[2],
+                "description": row[3],
+                "metrics": row[4],
+                "raw_response": json.loads(row[5]),
+            }
+            for row in rows
+        ]
+
+    except psycopg2.Error as e:
+        logger.error(f"Database error: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
