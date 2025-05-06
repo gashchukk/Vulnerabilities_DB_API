@@ -31,7 +31,7 @@ def fetch_all_chunks():
             desc = next(
                 (d["value"] for d in c["descriptions"] if d["lang"] == "en"), None
             )
-            metrics = c["metrics"]
+            metrics = c["metrics"]['cvssMetricV2'] if "cvssMetricV2" in c["metrics"] else c["metrics"]
 
             cpe = None
             for cfg in c.get("configurations", []):
