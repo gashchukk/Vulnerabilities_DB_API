@@ -13,8 +13,6 @@ __pycache__/
 *.coverage
 *.cover
 .DS_Store
-*.env
-*.env.*
 *.local
 *.local.*
 *.bak

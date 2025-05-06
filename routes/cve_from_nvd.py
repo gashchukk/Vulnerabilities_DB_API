@@ -20,7 +20,7 @@ def get_cves_by_cpe(
         }
 
         resp = requests.get(
-            "https://services.nvd.nist.gov/rest/json/cves/2.0",
+            os.getenv("NVD_API_BASE"),
             params=params,
             headers=headers,
         )
