@@ -10,9 +10,14 @@ import json
 
 router = APIRouter()
 
+
 @router.get("/cve_by_keyword")
 def get_cves_by_keyword(
-    keyword: str = Query(..., alias="keywordSearch", description="Keyword search for CVEs, e.g. 'Windows MacOs Linux'")
+    keyword: str = Query(
+        ...,
+        alias="keywordSearch",
+        description="Keyword search for CVEs, e.g. 'Windows MacOs Linux'",
+    )
 ):
     """
     Fetch CVEs by keyword from DB if available, otherwise fetch from NVD API and store in DB.
@@ -22,29 +27,40 @@ def get_cves_by_keyword(
         cursor = conn.cursor()
 
         # Try DB
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT cve_id, cpe_name, fetched_at, description, metrics 
             FROM cve_lookup 
             WHERE description ILIKE %s
-        """, (f"%{keyword}%",))
+        """,
+            (f"%{keyword}%",),
+        )
         db_results = cursor.fetchall()
 
         if db_results:
             rows = []
             for row in db_results:
-                rows.append({
-                    "cve_id": row[0],
-                    "cpe_name": row[1],
-                    "fetched_at": row[2].isoformat() if isinstance(row[2], datetime) else row[2],
-                    "description": row[3],
-                    "metrics": json.loads(row[4]) if isinstance(row[4], str) else row[4],
-                })
+                rows.append(
+                    {
+                        "cve_id": row[0],
+                        "cpe_name": row[1],
+                        "fetched_at": (
+                            row[2].isoformat()
+                            if isinstance(row[2], datetime)
+                            else row[2]
+                        ),
+                        "description": row[3],
+                        "metrics": (
+                            json.loads(row[4]) if isinstance(row[4], str) else row[4]
+                        ),
+                    }
+                )
             return rows
 
         # Fetch from NVD API if not found in DB
         params = {"keywordSearch": keyword}
-        headers = {"accept": "application/json", "apiKey": os.getenv('NVD_API_KEY')}
-        resp = requests.get(os.getenv('NVD_API_BASE'), params=params, headers=headers)
+        headers = {"accept": "application/json", "apiKey": os.getenv("NVD_API_KEY")}
+        resp = requests.get(os.getenv("NVD_API_BASE"), params=params, headers=headers)
         resp.raise_for_status()
 
         data = resp.json()
@@ -54,9 +70,14 @@ def get_cves_by_keyword(
         for item in data.get("vulnerabilities", []):
             c = item["cve"]
             cve_id = c["id"]
-            desc = next((d["value"] for d in c["descriptions"] if d["lang"] == "en"), None)
-            metrics = c["metrics"]['cvssMetricV2'] if "cvssMetricV2" in c["metrics"] else c["metrics"]
-
+            desc = next(
+                (d["value"] for d in c["descriptions"] if d["lang"] == "en"), None
+            )
+            metrics = (
+                c["metrics"]["cvssMetricV2"]
+                if "cvssMetricV2" in c["metrics"]
+                else c["metrics"]
+            )
 
             cpe = None
             for cfg in c.get("configurations", []):
@@ -69,19 +90,24 @@ def get_cves_by_keyword(
                     break
 
             # Insert into DB
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO cve_lookup (cve_id, cpe_name, fetched_at, description, metrics)
                 VALUES (%s, %s, %s, %s, %s)
                 ON CONFLICT (cve_id) DO NOTHING
-            """, (cve_id, cpe, fetched_at, desc, json.dumps(metrics)))
+            """,
+                (cve_id, cpe, fetched_at, desc, json.dumps(metrics)),
+            )
 
-            rows.append({
-                "cve_id": cve_id,
-                "cpe_name": cpe,
-                "fetched_at": fetched_at,
-                "description": desc,
-                "metrics": metrics,
-            })
+            rows.append(
+                {
+                    "cve_id": cve_id,
+                    "cpe_name": cpe,
+                    "fetched_at": fetched_at,
+                    "description": desc,
+                    "metrics": metrics,
+                }
+            )
 
         conn.commit()
         return rows
